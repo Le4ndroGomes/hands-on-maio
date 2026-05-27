@@ -1126,7 +1126,92 @@
 # MAGIC > **Mensagem-chave:** O Lakehouse não é só código — é também uma **plataforma visual**.
 # MAGIC > O Lakeflow Designer permite que **engenheiros, analistas e até gestores** construam pipelines
 # MAGIC > sem precisar saber Spark, mantendo toda a governança do Unity Catalog.
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ---
+# MAGIC # Perguntas-modelo para o Lakeflow Designer (IA Assistant)
 # MAGIC
+# MAGIC Quando você estiver no **Lakeflow Designer**, o campo de chat do **AI Assistant**
+# MAGIC aceita prompts em linguagem natural. Use estas 5 perguntas-modelo
+# MAGIC (em ordem crescente de complexidade) para construir suas Silver/Gold visualmente:
+# MAGIC
+# MAGIC ## Pergunta 1 — KPI por Hospital (Gold simples)
+# MAGIC
+# MAGIC > Group by `id_hospital`, `nome_hospital`, `cidade`, `especialidade` and calculate
+# MAGIC > `total_consultas` as count of `id_consulta`,
+# MAGIC > `tempo_espera_medio` as average of `tempo_espera_minutos`,
+# MAGIC > `cancelamentos` as sum of consultas where status = 'cancelada',
+# MAGIC > and `pacientes_unicos` as count distinct of `id_paciente`
+# MAGIC
+# MAGIC **Resultado esperado:** Tabela Gold com 1 linha por hospital, ideal para o primeiro dashboard.
+# MAGIC
+# MAGIC ---
+# MAGIC
+# MAGIC ## Pergunta 2 — Patient Experience por Canal de Avaliação
+# MAGIC
+# MAGIC > Group by `canal_avaliacao`, `cidade` and calculate
+# MAGIC > `total_avaliacoes` as count of `id_consulta`,
+# MAGIC > `avg_tempo_para_avaliar` as average of `tempo_para_avaliar_min`,
+# MAGIC > `taxa_anonimato` as sum of `avaliacao_anonima` divided by total,
+# MAGIC > and `tempo_espera_medio` as average of `tempo_espera_minutos`
+# MAGIC
+# MAGIC **Storytelling:** "Qual canal (App/WhatsApp/SMS) gera mais avaliações — e elas são mais rápidas ou mais anônimas?"
+# MAGIC
+# MAGIC ---
+# MAGIC
+# MAGIC ## Pergunta 3 — Análise Epidemiológica por Região + CID
+# MAGIC
+# MAGIC > Group by `regiao`, `estado`, `especialidade`, `cid_10`, `diagnostico_descricao` and calculate
+# MAGIC > `total_consultas` as count of `id_consulta`,
+# MAGIC > `pacientes_distintos` as count distinct of `id_paciente`,
+# MAGIC > `idade_media` as average of `idade`,
+# MAGIC > and `tempo_espera_medio` as average of `tempo_espera_minutos`
+# MAGIC
+# MAGIC **Storytelling:** "Quais são as doenças mais comuns por região brasileira? Idade média dos pacientes por CID?"
+# MAGIC
+# MAGIC ---
+# MAGIC
+# MAGIC ## Pergunta 4 — Produtividade Médica e Telemedicina
+# MAGIC
+# MAGIC > Group by `id_medico`, `nome_medico`, `crm`, `especialidade` and calculate
+# MAGIC > `total_consultas` as count of `id_consulta`,
+# MAGIC > `presenciais` as sum of consultas where modalidade = 'presencial',
+# MAGIC > `telemedicina` as sum where modalidade = 'telemedicina',
+# MAGIC > and `tempo_espera_medio` as average of `tempo_espera_minutos`
+# MAGIC
+# MAGIC **Storytelling:** "Quais médicos atendem mais? Qual o ratio de telemedicina por especialidade?"
+# MAGIC
+# MAGIC ---
+# MAGIC
+# MAGIC ## Pergunta 5 — Demografia × Convênio (Dashboard Executivo)
+# MAGIC
+# MAGIC > Group by `convenio`, `sexo`, `faixa_etaria`, `regiao` and calculate
+# MAGIC > `total_pacientes` as count distinct of `id_paciente`,
+# MAGIC > `total_consultas` as count of `id_consulta`,
+# MAGIC > `cancelamentos` as sum where status = 'cancelada',
+# MAGIC > `tempo_espera_medio` as average of `tempo_espera_minutos`,
+# MAGIC > and `taxa_telemedicina` as sum where modalidade = 'telemedicina' divided by total
+# MAGIC
+# MAGIC **Storytelling:** "SUS vs planos privados — onde a população jovem está sendo melhor atendida?"
+# MAGIC
+# MAGIC ---
+# MAGIC
+# MAGIC ### Dica de uso no Lakeflow Designer
+# MAGIC
+# MAGIC 1. Abra o **Lakeflow Editor** → **New ETL pipeline**
+# MAGIC 2. Adicione a fonte: **read_files** apontando para `/Volumes/healthcare_lakehouse/bronze/landing_zone/consultas/`
+# MAGIC 3. Adicione o joiner: arraste `bronze.hospitais` e `bronze.pacientes` como source secundárias
+# MAGIC 4. No node de **Transform**, cole uma das 5 perguntas acima no campo do **AI Assistant**
+# MAGIC 5. O Lakeflow vai gerar o código SQL/Spark automaticamente
+# MAGIC 6. Aponte o **Sink** para `silver.consultas_360` ou `gold.kpis_*`
+# MAGIC
+# MAGIC > **Sugestão de hands-on**: começar pela **Pergunta 1** (simples), depois subir para a **Pergunta 3** ou **Pergunta 5** que combinam dimensões de forma mais rica.
+
+# COMMAND ----------
+
+# MAGIC %md
 # MAGIC ---
 # MAGIC
 # MAGIC ### Setup concluído — siga para o Lakeflow Designer!
