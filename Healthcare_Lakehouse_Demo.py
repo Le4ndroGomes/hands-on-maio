@@ -813,10 +813,17 @@
 # MAGIC %md
 # MAGIC ### Gerando `avaliacoes/` no Volume
 # MAGIC
-# MAGIC **Lógica de geração (500 avaliações) — com SINERGIA ao tempo de espera:**
+# MAGIC **Lógica de geração (500 avaliações × 7 colunas) — com SINERGIA ao tempo de espera:**
 # MAGIC
-# MAGIC Lê `consultas/` do Volume (já gerado), filtra `status = 'finalizada'` e atribui sentimento
-# MAGIC **com viés realista baseado no `tempo_espera_minutos`**:
+# MAGIC | Categoria | Campos | Distribuição |
+# MAGIC |-----------|--------|-------------|
+# MAGIC | **FK** | `id_consulta`, `id_paciente` | JOIN com `consultas/` apenas onde `status = 'finalizada'` |
+# MAGIC | **Texto livre** | `texto_avaliacao` | Template BR com **viés por tempo de espera** (ver tabela abaixo) |
+# MAGIC | **Temporal** | `data_avaliacao` | 1-90 dias atrás (sazonalidade) |
+# MAGIC | **Canal** | `canal_avaliacao` | App 35% / WhatsApp 30% / SMS 15% / Site 12% / Quiosque 8% |
+# MAGIC | **Identificação** | `avaliacao_anonima`, `tempo_para_avaliar_min` | 15% anônimas; tempo segue cauda longa (20% < 2h, 40% 2-24h, 30% 1-5d, 10% 5-7d) |
+# MAGIC
+# MAGIC **Viés do sentimento por tempo de espera** (regra de negócio crítica):
 # MAGIC
 # MAGIC | Faixa tempo_espera | % positivo | % negativo | % neutro | Insight de negócio |
 # MAGIC |--------------------|-----------:|-----------:|---------:|-------------------|
@@ -829,7 +836,9 @@
 # MAGIC **Por que isso importa para a demo de IA/BI:**
 # MAGIC - Dashboards Gold vão mostrar **correlação real** entre operação (tempo) e patient experience
 # MAGIC - `ai_analyze_sentiment()` vai validar a hipótese: tempo alto = sentimento baixo
-# MAGIC - O aluno pode **descobrir o insight** via Genie/AI/BI sem ser óbvio na própria tabela
+# MAGIC - Análise de canal: qual canal (App/WhatsApp) gera mais feedbacks por hospital?
+# MAGIC - Anonimato: avaliações anônimas são mais negativas? (hipótese a ser validada)
+# MAGIC - Time-to-feedback: quanto antes o paciente avalia, mais positivo tende a ser?
 
 # COMMAND ----------
 
@@ -926,11 +935,12 @@
 # MAGIC     )
 # MAGIC   ),
 # MAGIC   -- Lê consultas finalizadas DO PRÓPRIO CSV gerado anteriormente (já no Volume)
-# MAGIC   -- Isso garante SINERGIA: o tempo_espera_minutos da consulta influencia o sentimento!
+# MAGIC   -- Traz tempo_espera (p/ sinergia sentimento) E id_paciente (FK redundante útil pra joins)
 # MAGIC   finalizadas AS (
 # MAGIC     SELECT
 # MAGIC       CAST(id_consulta AS INT) AS id_consulta,
 # MAGIC       CAST(tempo_espera_minutos AS INT) AS tempo_espera,
+# MAGIC       CAST(id_paciente AS INT) AS id_paciente,
 # MAGIC       row_number() OVER (ORDER BY CAST(id_consulta AS INT)) AS seq
 # MAGIC     FROM read_files(
 # MAGIC       '/Volumes/healthcare_lakehouse/bronze/landing_zone/consultas/',
@@ -946,6 +956,7 @@
 # MAGIC   aval_decorada AS (
 # MAGIC     SELECT
 # MAGIC       f.id_consulta,
+# MAGIC       f.id_paciente,
 # MAGIC       f.tempo_espera,
 # MAGIC       CASE
 # MAGIC         -- Faixa 1: tempo curto (< 20 min) → maioria positivo
@@ -978,8 +989,30 @@
 # MAGIC   )
 # MAGIC SELECT
 # MAGIC   ad.id_consulta,
-# MAGIC   -- Coalesce traz o texto do pool certo (o JOIN só preenche um dos três)
-# MAGIC   COALESCE(p.texto, n.texto, u.texto) AS texto_avaliacao
+# MAGIC   ad.id_paciente,
+# MAGIC   -- Texto livre via JOIN com pool correspondente ao sentimento
+# MAGIC   COALESCE(p.texto, n.texto, u.texto) AS texto_avaliacao,
+# MAGIC   -- Data da avaliação: entre 1 e 90 dias atrás (sazonalidade fake)
+# MAGIC   date_sub(current_date(), CAST(pmod(ad.id_consulta * 19, 90) AS INT)) AS data_avaliacao,
+# MAGIC   -- Canal de coleta — distribuição realista BR (App lidera, Quiosque minoritário)
+# MAGIC   --   App 35% / WhatsApp 30% / SMS 15% / Site 12% / Quiosque 8%
+# MAGIC   CASE
+# MAGIC     WHEN pmod(ad.id_consulta * 43, 100) < 35 THEN 'App'
+# MAGIC     WHEN pmod(ad.id_consulta * 43, 100) < 65 THEN 'WhatsApp'
+# MAGIC     WHEN pmod(ad.id_consulta * 43, 100) < 80 THEN 'SMS'
+# MAGIC     WHEN pmod(ad.id_consulta * 43, 100) < 92 THEN 'Site'
+# MAGIC     ELSE 'Quiosque'
+# MAGIC   END AS canal_avaliacao,
+# MAGIC   -- 15% das avaliações são anônimas (geralmente as negativas)
+# MAGIC   CASE WHEN pmod(ad.id_consulta * 71, 100) < 15 THEN true ELSE false END AS avaliacao_anonima,
+# MAGIC   -- Tempo até avaliar (em minutos): cauda longa de 5min a 7 dias (10080 min)
+# MAGIC   --   maioria avalia entre 30 min e 2 dias
+# MAGIC   CASE
+# MAGIC     WHEN pmod(ad.id_consulta * 89, 100) < 20 THEN pmod(ad.id_consulta * 31, 120)   + 5     -- 20%: dentro de 2h (rapidão)
+# MAGIC     WHEN pmod(ad.id_consulta * 89, 100) < 60 THEN pmod(ad.id_consulta * 31, 1320)  + 120   -- 40%: 2h-24h
+# MAGIC     WHEN pmod(ad.id_consulta * 89, 100) < 90 THEN pmod(ad.id_consulta * 31, 5760)  + 1440  -- 30%: 1-5 dias
+# MAGIC     ELSE pmod(ad.id_consulta * 31, 2880) + 7200                                            -- 10%: 5-7 dias (atrasão)
+# MAGIC   END AS tempo_para_avaliar_min
 # MAGIC FROM aval_decorada ad
 # MAGIC LEFT JOIN textos_pos p ON ad.sentimento = 'pos' AND p.idx = ad.idx_pos
 # MAGIC LEFT JOIN textos_neg n ON ad.sentimento = 'neg' AND n.idx = ad.idx_neg
